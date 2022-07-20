@@ -14,11 +14,9 @@
 	1SW: adult length 60cm (compensating for smolt size differences among s1,s2,s3)
 	2SW: adult length 75cm (likewise)
 
-* adult coastal stage (stage 8, 2 mos) should set separate, user-settable mortality.
-
-	baseline value 10%
+* retune marine mortality
 	
-	re-tuning marine mortality for the Bush:
+	data from the Bush:
 	1SW: survival (stages 5-8) = 2.7% lowest , 4.9% mean and 11.7% highest
 	2SW: 0.1% , 0.75%, and 1.8%
  

@@ -74,9 +74,9 @@ p.gR_growth = 0.175; % the g parameter in the Ratkowsky model
 p.m_egg = 0.1;
 p.m_smolt = 0.3; % 0.1 - 0.5
 p.m_earlyPS = 0.5;
-p.mort_marine_monthly = 0.66; % applied to early/latePS and adult stages.
+p.mort_marine_monthly = 0.66; % applied to early/latePS and adultOc stages.
 						% defined at start of earlyPS; declines rapidly with size
-						% tuned to make overall marine survival 5%
+p.m_adultCoastal = 0.1;
 p.m_adultRiver = 0.09;
 p.exp_sizeMort = -1.57; % beta from Ricker 1976 -> Mangel 1994 -> IBASAM
 						% (dependence of daily mortality on weight)
@@ -151,7 +151,8 @@ for i = 1:nStages-1
 	
 	if i==s.egg
 		% temperature-dependent egg duration
-		dt_i = p.baselineDuration_egg * (365/12) ./ p.Q10_dtegg .^ (p.dTwinter./10);
+		dt_i_baseline = p.baselineDuration_egg * (365/12);
+		dt_i = dt_i_baseline ./ p.Q10_dtegg .^ (p.dTwinter./10);
 	elseif i==s.fry
 		% fry stage is defined as ending 30 Sep in first year
 		dt_i = datenum('30 Sep 0000') - res.t0(s.fry);
@@ -202,7 +203,7 @@ for i = 1:nStages-1
 	
 	% density and duration dependence
 	if i == s.egg
-		daily_mort = 1 - (1-p.m_egg)    ^ (1/dt_i);
+		daily_mort = 1 - (1-p.m_egg)    ^ (1/dt_i_baseline);
 		m_i =        1 - (1-daily_mort) ^ (dt_i);
     elseif i == s.fry
         % apply Ricker density-dependent mortality (scramble competition)
@@ -223,13 +224,14 @@ for i = 1:nStages-1
         end
         m_i = 1 - (recruits/stock); % total mortality over stage duration
 	elseif i == s.smolt
-		daily_mort = 1 - (1-p.m_smolt)  ^ (1/dt_i);
-		m_i =        1 - (1-daily_mort) ^ (dt_i);
-	elseif i >= s.earlyPS && i <= s.adultCoastal
+		m_i =  p.m_smolt;
+	elseif i >= s.earlyPS && i <= s.adultOc
 		refW = p.ref_length_earlyPS^3 / p.L3overW;
 		Wcutoff = p.Lcutoff_sizeMort^3 / p.L3overW;
 		r_size = (min(res.W(i), Wcutoff)/refW) ^ p.exp_sizeMort;
 		m_i = 1 - (1 - p.mort_marine_monthly * r_size) ^ (dt_i/365*12);
+	elseif i == s.adultCoastal
+		m_i = p.m_adultCoastal;
 	elseif i == s.adultRiver
 		m_i = p.m_adultRiver; % no adjustments
 	end
