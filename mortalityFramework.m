@@ -1,7 +1,7 @@
 function [res,p,monthly,daily] = mortalityFramework(varargin);
 
 % Salmon Mortality Framework Model
-% v0.5.2, July 2022
+% v0.6, July 2022
 % Neil Banas, Emma Tyldesley, Colin Bull
 
 
@@ -17,6 +17,15 @@ for i=1:length(stages)
 	s.(stages{i}) = i; % for more readable code, s.egg = 1, s.fry = 2, ...
 end
 
+% you can get these variables by calling
+% [stages,stages_longnames,s] = mortalityFramework('stages');
+if nargin>0 && strcmpi(varargin{1},'stages')
+	res = stages;
+	p = stages_longnames;
+	monthly = s;
+	return;
+end	
+
 
 % --- model parameters ------------------------------------------------------------------
 clear p
@@ -29,7 +38,7 @@ p.yearday_eggDeposition = datenum('1 Nov 0000') - 366;
 p.baselineDuration_egg = 5; % in months
 p.yearday_endOfFry = datenum('30 Sep 0000');
 p.baselineDuration_parr = 6;
-p.flexibleParrDuration = 1; % if 1, choose parr duration based on length at end
+p.flexibleParrDuration = 0; % if 1, choose parr duration based on length at end
 							% of fry stage, as opposed to this being set by the
 							% user via parameter values
 p.baselineDuration_smolt = 1;
@@ -45,10 +54,13 @@ p.W_egg = 1; % 1 gram
 p.Q10_dtegg = 6.5;   % Elliott and Hurley 1998, reciprocal of eq 1a:
 				     % 2.12x change over 4 degC
 p.exp_growth = 0.31; % Forseth et al. 2001
-p.gmaxFry = 0.007; % tuned to give 7 cm at start of parr 
-p.gmaxParr6 = 0.013; % tuned to give a 13 cm smolt for 6 mo parr
-p.gmaxParr18 = 0.0052; % tuned to give a 13 cm smolt for 18 mo parr
-p.gmaxOc = 0.051; % tuned to turn a 13 cm smolt into a 60 cm adult		   	     
+p.gmaxFry = 0.007; % tuned to give 7 cm at start of parr
+				   % vary this about +/- 30% to give 6-8 cm parr
+p.gmaxParr6 = 0.0152; % tuned to give a 13 cm smolt for 6 mo parr
+p.gmaxParr18 = 0.0054; % tuned to give a 13.5 cm smolt for 18 mo parr
+p.gmaxParr30 = 0.0034; % tuned to give a 14 cm smolt for 30 mo parr
+p.gmaxOc1SW = 0.051; % tuned to turn a 13-13.5 cm smolt into a 60 cm adult after 1SW
+p.gmaxOc2SW = 0.031; % tuned to turn a 13-13.5 cm smolt into a 75 cm adult after 2SW
 	% gmax is c/100 in the Ratkowsky model used by Forseth et al. 2001:
 	% growth at 1 g body weight and at optimal temp. T = TM
 	% base value is 2.05/100, which is the average over "mod. fast" category,
@@ -56,12 +68,14 @@ p.gmaxOc = 0.051; % tuned to turn a 13 cm smolt into a 60 cm adult
 	% but this needs to be reduced in FW to account for the fact that food is actually 
 	% quite seasonal, not year-round
 p.ref_length_parr = 7; % smaller than this at start of parr stage,
-					   % add 12 mos to parr stage
-p.ref_length_earlyPS = 13;
+					   % add 12 mos to parr stage, if flexibleParrDuration = 1
+					   
+p.ref_length_earlyPS = 13; % just for scaling the equations, not tuning targets
 p.ref_length_adultRiver = 60;
 p.L3overW = 62^3 / 2500; % length in cm cubed over weight in g
 						 % calibrated using Bacon et al. 2009
-	     
+
+% temperature dependence: not used
 p.TL_growth = 7.2;   % lower-bound, optimal, and upper-bound temperatures for growth:
 p.TM_growth = 18.3;  % Jonsson et al. 2001
 p.TU_growth = 24.5;
@@ -90,8 +104,7 @@ p.parrSmoltBH = 0.5;    % parr to smolt Beverton Holt stock-recruit parameter
     % the Ricker and BH parameters above all directly from Salmonmodeller
     % no references given
     % values for R. Bush data were maxParr 650000, fryRicker 0.259
-    % BH curve based on 6 mo parr; have to think about how to adjust mortality for
-    % 18 mo parr
+    % BH curve based on 6 mo parr
 p.mort_parr_annual = 0.2; % additional mortality if the parr take 18 mo instead of 6
 
 
@@ -99,13 +112,10 @@ p.mort_parr_annual = 0.2; % additional mortality if the parr take 18 mo instead 
 
 p.dTwinter = 0; % degrees relative to baseline, whatever baseline is;
 				% applied to egg duration
-p.dgmaxFry = 0.9; % multiplier on gmaxFW during fry stage (first summer)
-	% Vary this +/- 20% to get 6-8 cm at start of parr
-	% default value is < 1 to tip the base case more clearly into the 18 mo parr scenario
+p.dgmaxFry = 1; % multiplier on gmaxFW during fry stage (first summer)
 p.dgmaxParr = 1; % multiplier on gmaxFW during parr stage
-	% Vary this about 20% to get 11-15 cm smolts
-% m_smolt is the 4th control knob 
-
+	% vary these +/- 15% in combination to get a valid range of smolt sizes
+p.dgmaxOc = 1; % placeholder; haven't evaluated how it behaves
 
 
 % override defaults based on function inputs
@@ -122,6 +132,7 @@ else
 		end
 	end
 end
+
 
 nStages = length(stages);
 blank = repmat(nan,[nStages 1]);
@@ -184,7 +195,9 @@ for i = 1:nStages-1
 	if i == s.fry
 		g = p.dgmaxFry .* p.gmaxFry .* r_size .* r_temp .* r_prey;
 	elseif i == s.parr
-		if dt_i > 365
+		if dt_i > 365*2
+			gmax = p.gmaxParr30;
+		elseif dt_i > 365
 			gmax = p.gmaxParr18;
 		else
 			gmax = p.gmaxParr6;
@@ -194,7 +207,12 @@ for i = 1:nStages-1
 		g = p.gmaxParr18 .* r_size .* r_temp .* r_prey; 
 		% matters very little but have to put down something
 	elseif i >= s.earlyPS & i <= s.adultCoastal
-		g = p.gmaxOc .* r_size .* r_temp .* r_prey;
+		if p.baselineDuration_adultOc < 12 % 1SW
+			gmax = p.gmaxOc1SW;
+		else
+			gmax = p.gmaxOc2SW;
+		end
+		g = p.dgmaxOc .* gmax .* r_size .* r_temp .* r_prey;
 	end
 	Wend_i = res.W(i) .* exp(g .* dt_i);
 	
@@ -216,11 +234,13 @@ for i = 1:nStages-1
         % apply Beverton-Holt density-dependent mortality
         stock = res.N(i);
         recruits = (p.parrSmoltBH * stock) / (1 + (p.parrSmoltBH/p.maxSmolts) * stock);
-            %  numbers surviving over stage
-        if dt_i > 365
+            % numbers surviving over stage
+        if dt_i > 365*2
+        	recruits = recruits .* (1 - p.mort_parr_annual) ^ 2;
+        	% additional penalty for 30 mo parr
+		elseif dt_i > 365        	
         	recruits = recruits .* (1 - p.mort_parr_annual);
-        	% the B-H curve is parameterised for 6 mo parr. This is an additional
-        	% penalty for 18 mo parr
+        	% additional penalty for 18 mo parr
         end
         m_i = 1 - (recruits/stock); % total mortality over stage duration
 	elseif i == s.smolt
@@ -248,6 +268,7 @@ end
 
 res.stages = stages';
 res.stages_longnames = stages_longnames';
+
 
 
 % res contains results by stage. Now translate into daily and monthly values ------------

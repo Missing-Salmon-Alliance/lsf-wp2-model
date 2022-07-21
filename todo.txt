@@ -3,17 +3,6 @@
 
 * fecundity for 1SW and 2SW females, close life cycle by calculating next-generation eggs
 
-* layer in which user can select 1,2,3 yr old smolts and have the code figure out what parameter set that corresponds to.
-
-	s1 (1 year old smolt) = 6 mo in parr, smolt length 13 cm (12-14)
-	s2 = 18 mo in parr, smolt length 13.5 cm (12-14.5). Additional mortaliy of 20%
-	s3 = 30 mo in parr, smolt length 14 cm (12-15). Additional additional 20% mortality
-
-* likewise, choice of 1SW/2SW returners
-
-	1SW: adult length 60cm (compensating for smolt size differences among s1,s2,s3)
-	2SW: adult length 75cm (likewise)
-
 * retune marine mortality
 	
 	data from the Bush:
