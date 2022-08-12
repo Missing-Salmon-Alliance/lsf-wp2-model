@@ -4,7 +4,7 @@ function [res,p,monthly,daily] = ...
 % wrapper for calling mortalityFramework.m in terms of a high-level scenario,
 % with the translation into specific parameter values handled internally.
 %
-% works with v0.6 of mortalityFramework.m.
+% works with v0.7 of mortalityFramework.m.
 %
 % currently can capture 1,2,3 year old smolts (parr stage of 6, 18, 30 mo)
 % 	's1'	's2'	's3'

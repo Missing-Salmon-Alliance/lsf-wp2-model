@@ -1,7 +1,7 @@
 function [res,p,monthly,daily] = mortalityFramework(varargin);
 
 % Salmon Mortality Framework Model
-% v0.6, July 2022
+% v0.7, Aug 2022
 % Neil Banas, Emma Tyldesley, Colin Bull
 
 
@@ -70,7 +70,7 @@ p.gmaxOc2SW = 0.031; % tuned to turn a 13-13.5 cm smolt into a 75 cm adult after
 p.ref_length_parr = 7; % smaller than this at start of parr stage,
 					   % add 12 mos to parr stage, if flexibleParrDuration = 1
 					   
-p.ref_length_earlyPS = 13; % just for scaling the equations, not tuning targets
+p.ref_length_earlyPS = 14; % just for scaling the equations, not tuning targets
 p.ref_length_adultRiver = 60;
 p.L3overW = 62^3 / 2500; % length in cm cubed over weight in g
 						 % calibrated using Bacon et al. 2009
@@ -86,17 +86,6 @@ p.gR_growth = 0.175; % the g parameter in the Ratkowsky model
 % --- mortality params ---
 
 p.m_egg = 0.1;
-p.m_smolt = 0.3; % 0.1 - 0.5
-p.m_earlyPS = 0.5;
-p.mort_marine_monthly = 0.66; % applied to early/latePS and adultOc stages.
-						% defined at start of earlyPS; declines rapidly with size
-p.m_adultCoastal = 0.1;
-p.m_adultRiver = 0.09;
-p.exp_sizeMort = -1.57; % beta from Ricker 1976 -> Mangel 1994 -> IBASAM
-						% (dependence of daily mortality on weight)
-p.Lcutoff_sizeMort = 60; % beyond this stops applying size-dependent mortality.
-						% makes very little difference whether this is 25 or 60
-
 p.maxParr = 50000;      % fry-stage carrying capacity
 p.fryRicker = 0.08;     % hatching to parr Ricker stock-recruit parameter
 p.maxSmolts = 27000;    % parr-stage carrying capacity
@@ -106,6 +95,25 @@ p.parrSmoltBH = 0.5;    % parr to smolt Beverton Holt stock-recruit parameter
     % values for R. Bush data were maxParr 650000, fryRicker 0.259
     % BH curve based on 6 mo parr
 p.mort_parr_annual = 0.2; % additional mortality if the parr take 18 mo instead of 6
+p.m_smolt = 0.3; % 0.1 - 0.5
+p.m_earlyPS_monthly = 0.40; % at ref_length_earlyPS; declines rapidly with size
+p.exp_sizeMort = -0.37; % dependence of daily mortality on weight
+p.rmort2SW = 1.07; % additional marine mortality (multiplier) for 2SW vs 1SW
+p.m_adultOc_monthly = 0.03;
+p.m_adultCoastal = 0.1;
+p.m_adultRiver = 0.09;
+
+% marine mortality parameters tuned based on 1SW, 2SW survival for the Bush,
+% and so that a 25% change in smolt length (12-16 cm) has roughly a 2x effect
+% on marine survival. Alternately, if we keep the exp_sizeMort consistent with
+% Ricker 1976 -> Mangel 1994 -> IBASAM, and retune, we would have
+% p.exp_sizeMort = -1.57;
+% p.m_earlyPS_monthly = 0.55;
+% p.rmort2SW = 1.04;
+% wth same base-case marine survival but with really extreme variation as smolt length
+% changes.
+
+
 
 
 % --- environmental scenario ---
@@ -245,11 +253,25 @@ for i = 1:nStages-1
         m_i = 1 - (recruits/stock); % total mortality over stage duration
 	elseif i == s.smolt
 		m_i =  p.m_smolt;
-	elseif i >= s.earlyPS && i <= s.adultOc
+	elseif i == s.earlyPS || i == s.latePS % size-dependence during post-smolt only
 		refW = p.ref_length_earlyPS^3 / p.L3overW;
-		Wcutoff = p.Lcutoff_sizeMort^3 / p.L3overW;
-		r_size = (min(res.W(i), Wcutoff)/refW) ^ p.exp_sizeMort;
-		m_i = 1 - (1 - p.mort_marine_monthly * r_size) ^ (dt_i/365*12);
+		r_size = (res.W(i)/refW) ^ p.exp_sizeMort;
+		if p.baselineDuration_adultOc > 12 % additional mortality for 2SW
+			rlh = p.rmort2SW;
+		else
+			rlh = 1;
+		end
+		m_i = 1 - max(0, 1 - p.m_earlyPS_monthly * r_size * rlh) ^ (dt_i/365*12);
+		if p.baselineDuration_adultOc > 12 % additional mortality for 2SW
+			m_i = m_i * p.rmort2SW;
+		end
+	elseif i == s.adultOc
+		if p.baselineDuration_adultOc > 12 % additional mortality for 2SW
+			rlh = p.rmort2SW;
+		else
+			rlh = 1;
+		end
+		m_i = 1 - max(0, 1 - p.m_adultOc_monthly * rlh) ^ (dt_i/365*12);
 	elseif i == s.adultCoastal
 		m_i = p.m_adultCoastal;
 	elseif i == s.adultRiver
