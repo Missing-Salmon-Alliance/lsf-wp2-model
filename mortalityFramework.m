@@ -4,7 +4,7 @@ function [res,p,monthly,daily] = mortalityFramework(varargin);
 % v0.7, Aug 2022
 % Neil Banas, Emma Tyldesley, Colin Bull
 
-
+% Edited ET 15/8/22 to implement egg production
 
 % --- stage structure ---
 stages = {'egg','fry','parr','smolt','earlyPS','latePS',...
@@ -113,8 +113,14 @@ p.m_adultRiver = 0.09;
 % wth same base-case marine survival but with really extreme variation as smolt length
 % changes.
 
-
-
+% -- ET edit -- 
+% Fecundity parameters.
+% Fecundity estimated as function of fork length (L_f) in cm:
+% log10(eggs)=m.log10(L_f)+c
+% Parameters from Hanson et al. (2019) by digitising results for fish with
+% smolt age 1-4 and sea winters 1-3 (figs 2 & 3).
+p.fecunditySlope = 2.9;
+p.fecundityIntercept = -1.52;
 
 % --- environmental scenario ---
 
@@ -141,6 +147,16 @@ else
 	end
 end
 
+% -- ET edit --
+% set proportion of spawners female
+% 50:50 if 1SW returner; 70:30 if 2SW
+% this is used to estimate egg production from returners
+if p.baselineDuration_adultOc > 12
+    propFemale = 0.7;
+else 
+    propFemale = 0.5;
+end
+% -------------
 
 nStages = length(stages);
 blank = repmat(nan,[nStages 1]);
@@ -160,8 +176,6 @@ res.N(1) = p.N_initial;
 res.W(1) = p.W_egg;
 res.L(1) = (p.L3overW .* p.W_egg) .^ (1/3);
 res.t0(1) = p.yearday_eggDeposition;
-
-
 
 % main loop over stages -----------------------------------------------------------------
 for i = 1:nStages-1
@@ -286,7 +300,24 @@ for i = 1:nStages-1
 	res.W(i+1) = Wend_i;
 	res.L(i+1) = (p.L3overW .* Wend_i) .^ (1/3);
 	res.t0(i+1) = res.t0(i) + dt_i;
+    
 end
+
+% -- ET edit --
+% Calculate egg production.
+% 'nextGen' is currently used to store survivors of adultRiver stage,
+% i.e. spawners
+% Do we want a new stage, e.g. "resultingEggs"?
+% Or better to store egg production in nextGen, i.e. move this block of
+% code into main loop over stages?
+spawners = res.N(s.nextGen) * propFemale; % number of female spawners
+spawner_L_f = res.L(s.nextGen);           % mean spawner size (cm)
+
+fecundity = 10^( p.fecunditySlope*log10(spawner_L_f) + p.fecundityIntercept );
+                                          % eggs per female as function of body length
+
+resultingEggs = spawners * fecundity; % total egg production
+% --------------
 
 res.stages = stages';
 res.stages_longnames = stages_longnames';
