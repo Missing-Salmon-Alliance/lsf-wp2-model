@@ -399,8 +399,8 @@ monthly$W <- exp( approx(res$t0,log(res$W),monthly$t,method="linear")$y )
 monthly$L <- exp( approx(res$t0,log(res$L),monthly$t,method="linear")$y )
 
 #str(monthly)
-outputList <-  list(res,p,daily,monthly)
-names(outputList) <- c("res","p","daily","monthly")
+outputList <-  list(res,p,daily,monthly,lubridate::now())
+names(outputList) <- c("res","p","daily","monthly","timestamp")
 return(outputList)
 
 }
