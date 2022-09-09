@@ -1,8 +1,104 @@
-mortalityFramework <- function(...) { 
+mortalityFramework <- function(p = list(
+  N_initial = 1e6, # initial number of eggs
+  
+  # --- life history schedule ---
+  
+  yearday_eggDeposition = -60, # Matlab: datenum('1 Nov 0000') - 366
+  # Note: could use ISOdatetime?
+  baselineDuration_egg = 5, # in months
+  yearday_endOfFry = 274, # Matlab: datenum('30 Sep 0000')
+  baselineDuration_parr = 6,
+  flexibleParrDuration = 0, # if 1, choose parr duration based on length at end of fry stage, as opposed to this being set by the user via parameter values
+  baselineDuration_smolt = 1,
+  baselineDuration_earlyPS = 3,
+  baselineDuration_latePS = 5,
+  baselineDuration_adultOc = 4,
+  baselineDuration_adultCoastal = 2,
+  baselineDuration_adultRiver = 4,
+  
+  # --- growth parameters ---
+  W_egg = 1, # 1 gram
+  Q10_dtegg = 6.5,   # Elliott and Hurley 1998, reciprocal of eq 1a:
+  # 2.12x change over 4 degC
+  exp_growth = 0.31, # Forseth et al. 2001
+  gmaxFry = 0.007, # tuned to give 7 cm at start of parr; vary this about +/- 30# to give 6-8 cm parr
+  gmaxParr6 = 0.0152, # tuned to give a 13 cm smolt for 6 mo parr
+  gmaxParr18 = 0.0054, # tuned to give a 13.5 cm smolt for 18 mo parr
+  gmaxParr30 = 0.0034, # tuned to give a 14 cm smolt for 30 mo parr
+  gmaxOc1SW = 0.051, # tuned to turn a 13-13.5 cm smolt into a 60 cm adult after 1SW
+  gmaxOc2SW = 0.031, # tuned to turn a 13-13.5 cm smolt into a 75 cm adult after 2SW
+  # gmax is c/100 in the Ratkowsky model used by Forseth et al. 2001:
+  # growth at 1 g body weight and at optimal temp. T = TM
+  # base value is 2.05/100, which is the average over "mod. fast" category,
+  # 5 rivers, Jonsson et al. 2001
+  # but this needs to be reduced in FW to account for the fact that food is actually 
+  # quite seasonal, not year-round
+  
+  ref_length_parr = 7,   # smaller than this at start of parr stage, add 12 mos to parr stage, if flexibleParrDuration = 1
+  
+  ref_length_earlyPS = 14, # just for scaling the equations, not tuning targets
+  ref_length_adultRiver = 60,
+  L3overW = 62^3 / 2500, # length in cm cubed over weight in g
+  # calibrated using Bacon et al. 2009
+  
+  # temperature dependence: not used
+  TL_growth = 7.2,   # lower-bound, optimal, and upper-bound temperatures for growth:
+  TM_growth = 18.3,  # Jonsson et al. 2001
+  TU_growth = 24.5,
+  gR_growth = 0.175,
+  
+  # --- mortality params ---
+  m_egg = 0.1,
+  maxParr = 50000,     # juv first summer carrying capacity
+  fryRicker = 0.08,     # hatching to parr Ricker stock-recruit parameter
+  maxSmolts = 27000,    # juv later carrying capacity
+  parrSmoltBH = 0.5,    # parr to smolt Beverton Holt stock-recruit parameter
+  # the Ricker and BH parameters above all directly from Salmonmodeller
+  # no references given
+  # values for R. Bush data were maxParr 650000, fryRicker 0.259
+  # BH curve based on 6 mo parr
+  mort_parr_annual <- 0.2, # additional mortality if the parr take 18 mo instead of 6
+  m_smolt = 0.3, # 0.1 - 0.5
+  
+  m_earlyPS_monthly = 0.40, # at ref_length_earlyPS; declines rapidly with size
+  exp_sizeMort = -0.37, # dependence of daily mortality on weight
+  rmort2SW = 1.07, # additional marine mortality (multiplier) for 2SW vs 1SW
+  m_adultOc_monthly = 0.03,
+  m_adultCoastal = 0.1,
+  m_adultRiver = 0.09,
+  
+  # marine mortality parameters tuned based on 1SW, 2SW survival for the Bush,
+  # and so that a 25# change in smolt length (12-16 cm) has roughly a 2x effect
+  # on marine survival. Alternately, if we keep the exp_sizeMort consistent with
+  # Ricker 1976 -> Mangel 1994 -> IBASAM, and retune, we would have
+  # exp_sizeMort = -1.57
+  # m_earlyPS_monthly = 0.55
+  # rmort2SW = 1.04
+  # wth same base-case marine survival but with really extreme variation as smolt length changes.
+  
+  # -- ET edit -- 
+  # --- fecundity parameters ---
+  # Fecundity estimated as function of fork length (L_f) in cm:
+  # log10(eggs)=m.log10(L_f)+c
+  # Parameters from Hanson et al. (2019) by digitising results for fish with
+  # smolt age 1-4 and sea winters 1-3 (figs 2 & 3).
+  fecunditySlope = 2.9,
+  fecundityIntercept = -1.52,
+  
+  # --- environmental scenario ---
+  dTwinter = 0, # degrees relative to baseline, whatever baseline is;
+  # applied to egg duration
+  dgmaxFry = 1, # multiplier on gmaxFW during fry stage (first summer)
+  dgmaxParr = 1, # multiplier on gmaxFW during parr stage
+  # vary these +/- 15# in combination to get a valid range of smolt sizes
+  dgmaxOc = 1), # placeholder; haven't evaluated how it behaves
+  ...) { 
   
 # Salmon Mortality Framework Model
-# v0.7, Aug 2022
+# v0.7.1, Aug 2022
 # Neil Banas, Emma Tyldesley, Colin Bull
+#   v0.7.1: GD - Edit parameter p definition, moved from in function to passed parameter
+#           GD - Added timestamp to output
   
 # Edited ET Aug 2022 to implement egg production
   
@@ -25,6 +121,10 @@ nStages <- length(stages)
 s <- data.frame( matrix(1:nStages,nrow=1))
 colnames(s) <- stages # for more readable code: s$egg <- 1, s$juvSum1 <- 2, etc
 
+# GD note: I transformed the built in defaults p into a single parameter that is modified via calls to the model function within R
+# This replaces the initialisation of p a few lines below plus I think the two commented out sections under ET notes.
+
+
 # ET note: haven't implemented the section below. Do you need this, Graeme?
 # # you can get these variables by calling
 # # [stages,stages_longnames,s] = mortalityFramework('stages')
@@ -36,101 +136,9 @@ colnames(s) <- stages # for more readable code: s$egg <- 1, s$juvSum1 <- 2, etc
 # end
 
 # --- model parameters ---
-p <- list() # initialise empty list
+# p <- list() # initialise empty list
 
-p[["N_initial"]] <- 1e6 # initial number of eggs
 
-# --- life history schedule ---
-
-p[["yearday_eggDeposition"]] <- -60 # Matlab: datenum('1 Nov 0000') - 366
-# Note: could use ISOdatetime?
-p[["baselineDuration_egg"]] <- 5 # in months
-p[["yearday_endOfFry"]] <- 274 # Matlab: datenum('30 Sep 0000')
-p[["baselineDuration_parr"]] <- 6
-p[["flexibleParrDuration"]] <- 0 # if 1, choose parr duration based on length at end of fry stage, as opposed to this being set by the user via parameter values
-p[["baselineDuration_smolt"]] <- 1
-p[["baselineDuration_earlyPS"]] <- 3
-p[["baselineDuration_latePS"]] <- 5
-p[["baselineDuration_adultOc"]] <- 4
-p[["baselineDuration_adultCoastal"]] <- 2
-p[["baselineDuration_adultRiver"]] <- 4
-
-# --- growth parameters ---
-p[["W_egg"]] <- 1 # 1 gram
-p[["Q10_dtegg"]] <- 6.5   # Elliott and Hurley 1998, reciprocal of eq 1a:
-# 2.12x change over 4 degC
-p[["exp_growth"]] <- 0.31 # Forseth et al. 2001
-p[["gmaxFry"]] <- 0.007 # tuned to give 7 cm at start of parr; vary this about +/- 30# to give 6-8 cm parr
-p[["gmaxParr6"]] <- 0.0152 # tuned to give a 13 cm smolt for 6 mo parr
-p[["gmaxParr18"]] <- 0.0054 # tuned to give a 13.5 cm smolt for 18 mo parr
-p[["gmaxParr30"]] <- 0.0034 # tuned to give a 14 cm smolt for 30 mo parr
-p[["gmaxOc1SW"]] = 0.051 # tuned to turn a 13-13.5 cm smolt into a 60 cm adult after 1SW
-p[["gmaxOc2SW"]] = 0.031 # tuned to turn a 13-13.5 cm smolt into a 75 cm adult after 2SW
-# gmax is c/100 in the Ratkowsky model used by Forseth et al. 2001:
-# growth at 1 g body weight and at optimal temp. T = TM
-# base value is 2.05/100, which is the average over "mod. fast" category,
-# 5 rivers, Jonsson et al. 2001
-# but this needs to be reduced in FW to account for the fact that food is actually 
-# quite seasonal, not year-round
-
-p[["ref_length_parr"]] <- 7   # smaller than this at start of parr stage, add 12 mos to parr stage, if flexibleParrDuration = 1
-
-p[["ref_length_earlyPS"]] <- 14 # just for scaling the equations, not tuning targets
-p[["ref_length_adultRiver"]] <- 60
-p[["L3overW"]] <- 62^3 / 2500 # length in cm cubed over weight in g
-# calibrated using Bacon et al. 2009
-
-# temperature dependence: not used
-p[["TL_growth"]] <- 7.2   # lower-bound, optimal, and upper-bound temperatures for growth:
-p[["TM_growth"]] <- 18.3  # Jonsson et al. 2001
-p[["TU_growth"]] <- 24.5
-p[["gR_growth"]] <- 0.175
-
-# --- mortality params ---
-p[["m_egg"]] <- 0.1
-p[["maxParr"]] <- 50000      # juv first summer carrying capacity
-p[["fryRicker"]] <- 0.08     # hatching to parr Ricker stock-recruit parameter
-p[["maxSmolts"]] <- 27000    # juv later carrying capacity
-p[["parrSmoltBH"]] <- 0.5    # parr to smolt Beverton Holt stock-recruit parameter
-# the Ricker and BH parameters above all directly from Salmonmodeller
-# no references given
-# values for R. Bush data were maxParr 650000, fryRicker 0.259
-# BH curve based on 6 mo parr
-p$mort_parr_annual <- 0.2 # additional mortality if the parr take 18 mo instead of 6
-p[["m_smolt"]] <- 0.3 # 0.1 - 0.5
-
-p[["m_earlyPS_monthly"]] <- 0.40 # at ref_length_earlyPS; declines rapidly with size
-p[["exp_sizeMort"]] <- -0.37 # dependence of daily mortality on weight
-p[["rmort2SW"]] <- 1.07 # additional marine mortality (multiplier) for 2SW vs 1SW
-p[["m_adultOc_monthly"]] <- 0.03
-p[["m_adultCoastal"]] <- 0.1
-p[["m_adultRiver"]] <- 0.09
-
-# marine mortality parameters tuned based on 1SW, 2SW survival for the Bush,
-# and so that a 25# change in smolt length (12-16 cm) has roughly a 2x effect
-# on marine survival. Alternately, if we keep the exp_sizeMort consistent with
-# Ricker 1976 -> Mangel 1994 -> IBASAM, and retune, we would have
-# p[["exp_sizeMort"]] <- -1.57
-# p[["m_earlyPS_monthly"]] <- 0.55
-# p[["rmort2SW"]] <- 1.04
-# wth same base-case marine survival but with really extreme variation as smolt length changes.
-
-# -- ET edit -- 
-# --- fecundity parameters ---
-# Fecundity estimated as function of fork length (L_f) in cm:
-# log10(eggs)=m.log10(L_f)+c
-# Parameters from Hanson et al. (2019) by digitising results for fish with
-# smolt age 1-4 and sea winters 1-3 (figs 2 & 3).
-p[["fecunditySlope"]] <- 2.9
-p[["fecundityIntercept"]] <- -1.52
-
-# --- environmental scenario ---
-p[["dTwinter"]] <- 0 # degrees relative to baseline, whatever baseline is;
-  # applied to egg duration
-p[["dgmaxFry"]] <- 1 # multiplier on gmaxFW during fry stage (first summer)
-p[["dgmaxParr"]] <- 1 # multiplier on gmaxFW during parr stage
-# vary these +/- 15# in combination to get a valid range of smolt sizes
-p[["dgmaxOc"]] <- 1 # placeholder; haven't evaluated how it behaves
 
 # -- ET edit --
 # set proportion of spawners female
@@ -142,6 +150,7 @@ propFemale = 0.7
   propFemale = 0.5
 }
 # -------------
+
 
 # ET note: haven't implemented this part. Think you may already have extra code for this, Graeme?
 # override defaults based on function inputs
@@ -160,7 +169,7 @@ propFemale = 0.7
 # end
 
 # check p initialised
-str(p)
+#str(p)
 
 blank <- rep(NA,nStages)
 
@@ -340,7 +349,7 @@ res$stages <- stages
 res$stages_longnames <- stages_longnames
 
 # check res
-str(res)
+#str(res)
 
 # res contains results by stage. Now translate into daily and monthly values ---
 
