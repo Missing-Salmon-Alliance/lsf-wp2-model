@@ -4,15 +4,21 @@ function [res,p,monthly,daily] = mortalityFramework(varargin);
 % v0.7, Aug 2022
 % Neil Banas, Emma Tyldesley, Colin Bull
 
-% Edited ET 19/8/22 to implement egg production
+% Edited ET 19/8/22 t:
+% - implement egg production
+% Edited ET 25/10/22 to:
+% - retain adult spawners:
+% - move egg production into new stage
+% - update interpolation onto daily and monthly so that this is only carried
+% out to adult spawner stage
 
 % --- stage structure ---
 stages = {'egg','fry','parr','smolt','earlyPS','latePS',...
-		  'adultOc','adultCoastal','adultRiver','nextGen'};
+		  'adultOc','adultCoastal','adultRiver','adultSpawners','eggProduction'};
 stages_longnames = ...
 	{'egg','fry','parr','smolt',...
 	'early post-smolt','late post-smolt',...
-	'adult in ocean','adult on coast','adult in river','next generation'};
+	'adult in ocean','adult on coast','adult in river','adult spawners','egg production'};
 for i=1:length(stages)
 	s.(stages{i}) = i; % for more readable code, s.egg = 1, s.fry = 2, ...
 end
@@ -26,11 +32,9 @@ if nargin>0 && strcmpi(varargin{1},'stages')
 	return;
 end	
 
-
 % --- model parameters ------------------------------------------------------------------
 clear p
 p.N_initial = 1e6;
-
 
 % --- life history schedule ---
 
@@ -178,7 +182,7 @@ res.L(1) = (p.L3overW .* p.W_egg) .^ (1/3);
 res.t0(1) = p.yearday_eggDeposition;
 
 % main loop over stages -----------------------------------------------------------------
-for i = 1:nStages-1
+for i = 1:nStages-2 % nStages-1 -> nStages-2
 
 	% --- stage duration ---------------------------------
 	
@@ -306,21 +310,26 @@ end
 % -- ET edit --
 %
 % --- Calculate egg production ---
-% 'nextGen' was previously used to store survivors of adultRiver stage,
-% i.e. spawners.
-% Do we want a new stage to store adultRiver survivors, e.g.
-% "adultSpawners"?
-% Or better to store egg production in nextGen, as done here?
-spawners = res.N(s.nextGen) * propFemale;   % number of female spawners
-spawner_L_f = res.L(s.nextGen);             % mean spawner size (cm)
+% - 'nextGen' renamed to 'adultSpawners' to store survivors of adultRiver.
+% - egg production stored in new stage 'eggProduction'.
+
+spawners = res.N(s.adultSpawners) * propFemale;   % number of female spawners
+spawner_L_f = res.L(s.adultSpawners);             % mean spawner size (cm)
 fecundity = 10^( p.fecunditySlope*log10(spawner_L_f) + p.fecundityIntercept );
                                             % eggs per female as function of body length
 resultingEggs = spawners * fecundity;       % total egg production
+res.m(s.adultSpawners) = 1.0;               % zero survival of spawners
+res.dt(s.adultSpawners) = 0.0;              
 
-res.N(s.nextGen) = resultingEggs;           % update nextGen numbers
-res.W(s.nextGen) = p.W_egg;                 % set W to egg W
-res.L(s.nextGen) = (p.L3overW .* p.W_egg) .^ (1/3);
+% Note: in future we may want to model varying egg size or weight.
+% For now, use same values as for initial eggs.
+res.N(s.eggProduction) = resultingEggs;     % update egg production numbers
+res.W(s.eggProduction) = p.W_egg;           % set W to egg W
+res.L(s.eggProduction) = (p.L3overW .* p.W_egg) .^ (1/3);
                                             % set L to egg L
+res.t0(s.eggProduction) = res.t0(s.adultSpawners); % no time passes in adultSpawner stage
+% leave res.dt(s.eggProduction) and res.m(s.eggProduction) as NaN
+
 % ---------------------------------
 
 res.stages = stages';
@@ -328,31 +337,33 @@ res.stages_longnames = stages_longnames';
 
 % res contains results by stage. Now translate into daily and monthly values ------------
 
-daily.t = ceil(res.t0(1)) : floor(res.t0(end));
+% ET edit: should only do this up to adultSpawners stage
+daily.t = ceil(res.t0(1)) : floor(res.t0(s.adultSpawners));
+
 % mortality shouldn't be interpolated from one stage to the next--we want a flat line
 % within each stage
-daily_mort = 1 - (1-res.m).^(1./res.dt);
-for i=1:nStages-1
+daily_mort = 1 - (1-res.m(1:s.adultSpawners)).^(1./res.dt(1:s.adultSpawners));
+for i=1:nStages-2 % only do this up to adultSpawners stage
 	ff = find(daily.t >= res.t0(i) & daily.t < res.t0(i+1));
 	daily.mort(ff) = daily_mort(i);
 end
 % N can be interpolated: a linear interp of log N matches the idea of constant daily
 % loss rates
-daily.N = exp(interp1(res.t0,log(res.N),daily.t));
+daily.N = exp(interp1(res.t0(1:s.adultSpawners),log(res.N(1:s.adultSpawners)),daily.t));
 % might as well treat W and L the same way
-daily.W = exp(interp1(res.t0,log(res.W),daily.t));
-daily.L = exp(interp1(res.t0,log(res.L),daily.t));
+daily.W = exp(interp1(res.t0(1:s.adultSpawners),log(res.W(1:s.adultSpawners)),daily.t));
+daily.L = exp(interp1(res.t0(1:s.adultSpawners),log(res.L(1:s.adultSpawners)),daily.t));
 
+monthly.t = ceil(res.t0(1)) : 365/12 : floor(res.t0(s.adultSpawners));
+monthly_mort = 1 - (1-res.m(1:s.adultSpawners)).^(365./12./res.dt(1:s.adultSpawners));
 
-monthly.t = ceil(res.t0(1)) : 365/12 : floor(res.t0(end));
-monthly_mort = 1 - (1-res.m).^(365./12./res.dt);
-for i=1:nStages-1
+for i=1:nStages-2
 	ff = find(monthly.t >= res.t0(i) & monthly.t < res.t0(i+1));
 	monthly.mort(ff) = monthly_mort(i);
 end
-monthly.N = exp(interp1(res.t0,log(res.N),monthly.t));
-monthly.W = exp(interp1(res.t0,log(res.W),monthly.t));
-monthly.L = exp(interp1(res.t0,log(res.L),monthly.t));
+monthly.N = exp(interp1(res.t0(1:s.adultSpawners),log(res.N(1:s.adultSpawners)),monthly.t));
+monthly.W = exp(interp1(res.t0(1:s.adultSpawners),log(res.W(1:s.adultSpawners)),monthly.t));
+monthly.L = exp(interp1(res.t0(1:s.adultSpawners),log(res.L(1:s.adultSpawners)),monthly.t));
 
 
 
