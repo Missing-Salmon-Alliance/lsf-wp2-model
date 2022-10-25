@@ -4,7 +4,13 @@ mortalityFramework <- function(...) {
 # v0.7, Aug 2022
 # Neil Banas, Emma Tyldesley, Colin Bull
   
-# Edited ET Aug 2022 to implement egg production
+
+# Edited ET 19/8/22 to:
+# - implement egg production
+# Edited ET 25/10/22 to:
+# - retain adult spawners:
+# - move egg production into new stage
+# - update interpolation onto daily and monthly so that this is only # carried out to adult spawner stage
   
 # --- Transcribed from Matlab version: ---
 #   Matlab ceil --> R ceiling
@@ -17,10 +23,10 @@ mortalityFramework <- function(...) {
 # --- stage structure ---
 stages <- c("egg","fry","parr","smolt","earlyPS",
             "latePS","adultOc","adultCoastal",
-            "adultRiver","nextGen")
+            "adultRiver","adultSpawners","eggProduction")
 stages_longnames <- c("egg","fry","parr","smolt","early post-smolt",
                       "late post-smolt","adult in ocean","adult on coast",
-                      "adult in river","next generation")
+                      "adult in river","adult spawners","egg production")
 nStages <- length(stages)
 s <- data.frame( matrix(1:nStages,nrow=1))
 colnames(s) <- stages # for more readable code: s$egg <- 1, s$juvSum1 <- 2, etc
@@ -186,7 +192,7 @@ res$t0[1] <- p$yearday_eggDeposition # Nov before "first year"
 # -----------------------------
 # --- Main loop over stages ---
 
-for (i in 1:(nStages-1) ) {
+for (i in 1:(nStages-2) ) {
   
   # --- stage duration ---
   
@@ -321,15 +327,23 @@ for (i in 1:(nStages-1) ) {
 # Do we want a new stage to store adultRiver survivors, e.g.
 # "adultSpawners"?
 # Or better to store egg production in nextGen, as done here?
-spawners <- res$N[s$nextGen] * propFemale   # number of female spawners
-spawner_L_f <- res$L[s$nextGen]             # mean spawner size (cm)
+spawners <- res$N[s$adultSpawners] * propFemale   # number of female spawners
+spawner_L_f <- res$L[s$adultSpawners]             # mean spawner size (cm)
 fecundity <- 10^( p$fecunditySlope*log10(spawner_L_f) + p$fecundityIntercept )
 # eggs per female as function of body length
-resultingEggs <- spawners * fecundity       # total egg production
 
-res$N[s$nextGen] <- resultingEggs           # update nextGen numbers
-res$W[s$nextGen] <- p$W_egg                 # set W to egg W
-res$L[s$nextGen] <- (p$L3overW * p$W_egg) ^ (1/3) # set L to egg L
+resultingEggs <- spawners * fecundity       # total egg production
+res$m[s$adultSpawners] <- 1.0;               # zero survival of spawners
+res$dt[s$adultSpawners] <- 0.0; 
+
+# Note: in future we may want to model varying egg size or weight.
+# For now, use same values as for initial eggs.
+res$N[s$eggProduction] <- resultingEggs           # update nextGen numbers
+res$W[s$eggProduction] <- p$W_egg                 # set W to egg W
+res$L[s$eggProduction] <- (p$L3overW * p$W_egg) ^ (1/3)
+
+res$t0[s$eggProduction] <- res$t0[s$adultSpawners] # no time passes in adultSpawner stage
+# leave res.dt(s.eggProduction) and res.m(s.eggProduction) as NaN
 # ---------------------------------
   
 
@@ -343,18 +357,19 @@ res$stages_longnames <- stages_longnames
 str(res)
 
 # res contains results by stage. Now translate into daily and monthly values ---
+# ET edit: should only do this up to adultSpawners stage
 
 # Define daily -- data-frame again
-nDays <- length( ceiling(res$t0[1]) : floor(res$t0[nStages]) )
+nDays <- length( ceiling(res$t0[1]) : floor(res$t0[s$adultSpawners]) )
 daily <- data.frame(matrix(ncol=5,nrow=nDays))
 colnames(daily) <- c("t","mort","N","W","L")
 
-daily$t <- ceiling(res$t0[1]) : floor(res$t0[nStages])
+daily$t <- ceiling(res$t0[1]) : floor(res$t0[s$adultSpawners])
 
 # mortality shouldn't be interpolated from one stage to the next--we want a flat line
 # within each stage
-daily_mort <- 1 - (1-res$m)^(1/res$dt)
-for (i in 1:(nStages-1)) {
+daily_mort <- 1 - (1-res$m[1:s$adultSpawners])^(1/res$dt[1:s$adultSpawners])
+for (i in 1:(nStages-2)) {
 	ff <- which( daily$t >= res$t0[i] & daily$t < res$t0[i+1])
 	daily$mort[ff] <- daily_mort[i]
 }
@@ -363,31 +378,31 @@ for (i in 1:(nStages-1)) {
 # Matlab's interp1 func replaced with R's approx
 # But approx returns a list with xq and vq and we just want vq
 # so need to use $y. Have checked they do the same thing.
-daily$N <- exp( approx( res$t0,log(res$N),daily$t,method="linear")$y )
+daily$N <- exp( approx( res$t0[1:s$adultSpawners],log(res$N[1:s$adultSpawners]),daily$t,method="linear")$y )
 # might as well treat W and L the same way
-daily$W <- exp( approx(res$t0,log(res$W),daily$t,method="linear")$y )
-daily$L <- exp(approx(res$t0,log(res$L),daily$t,method="linear")$y )
+daily$W <- exp( approx(res$t0[1:s$adultSpawners],log(res$W[1:s$adultSpawners]),daily$t,method="linear")$y )
+daily$L <- exp(approx(res$t0[1:s$adultSpawners],log(res$L[1:s$adultSpawners]),daily$t,method="linear")$y )
 
 #str(daily)
 
 # monthly output
 # R doesn't like end of sequence not being a multiple of increment 365/12
 # so have redefined
-nMonths <- ceiling(res$t0[nStages]/(365/12) )+1
+nMonths <- ceiling(res$t0[s$adultSpawners]/(365/12) )+1
 monthly <- data.frame(matrix(ncol=5,nrow=nMonths))
 colnames(monthly) <- c("t","mort","N","W","L")
  
 monthly$t <- seq( from=ceiling(res$t0[1]), by=365/12, length.out=nMonths )
-monthly_mort <- 1 - (1-res$m)^(365/12/res$dt)
+monthly_mort <- 1 - (1-res$m[1:s$adultSpawners])^(365/12/res$dt[1:s$adultSpawners])
  
 for (i in 1:(nStages-1) ) {
    ff <- which(monthly$t >= res$t0[i] & monthly$t < res$t0[i+1])
    monthly$mort[ff] <- monthly_mort[i] 
  }
  
-monthly$N <- exp( approx(res$t0,log(res$N),monthly$t,method="linear")$y )
-monthly$W <- exp( approx(res$t0,log(res$W),monthly$t,method="linear")$y )
-monthly$L <- exp( approx(res$t0,log(res$L),monthly$t,method="linear")$y )
+monthly$N <- exp( approx(res$t0[1:s$adultSpawners],log(res$N[1:s$adultSpawners]),monthly$t,method="linear")$y )
+monthly$W <- exp( approx(res$t0[1:s$adultSpawners],log(res$W[1:s$adultSpawners]),monthly$t,method="linear")$y )
+monthly$L <- exp( approx(res$t0[1:s$adultSpawners],log(res$L[1:s$adultSpawners]),monthly$t,method="linear")$y )
 
 #str(monthly)
 outputList <-  list(res,p,daily,monthly)
