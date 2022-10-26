@@ -41,7 +41,7 @@ p.N_initial = 1e6;
 p.yearday_eggDeposition = datenum('1 Nov 0000') - 366;
 p.baselineDuration_egg = 5; % in months
 p.yearday_endOfFry = datenum('30 Sep 0000');
-p.baselineDuration_parr = 6;
+p.baselineDuration_parr = 18;
 p.flexibleParrDuration = 0; % if 1, choose parr duration based on length at end
 							% of fry stage, as opposed to this being set by the
 							% user via parameter values

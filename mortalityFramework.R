@@ -7,7 +7,7 @@ mortalityFramework <- function(p = list(
   # Note: could use ISOdatetime?
   baselineDuration_egg = 5, # in months
   yearday_endOfFry = 274, # Matlab: datenum('30 Sep 0000')
-  baselineDuration_parr = 6,
+  baselineDuration_parr = 18,
   flexibleParrDuration = 0, # if 1, choose parr duration based on length at end of fry stage, as opposed to this being set by the user via parameter values
   baselineDuration_smolt = 1,
   baselineDuration_earlyPS = 3,
@@ -57,7 +57,7 @@ mortalityFramework <- function(p = list(
   # no references given
   # values for R. Bush data were maxParr 650000, fryRicker 0.259
   # BH curve based on 6 mo parr
-  mort_parr_annual <- 0.2, # additional mortality if the parr take 18 mo instead of 6
+  mort_parr_annual = 0.2, # additional mortality if the parr take 18 mo instead of 6
   m_smolt = 0.3, # 0.1 - 0.5
   
   m_earlyPS_monthly = 0.40, # at ref_length_earlyPS; declines rapidly with size
