@@ -125,6 +125,8 @@ p.m_adultRiver = 0.09;
 % smolt age 1-4 and sea winters 1-3 (figs 2 & 3).
 p.fecunditySlope = 2.9;
 p.fecundityIntercept = -1.52;
+p.sexRatio1SW = 0.5; % proportion female
+p.sexRatioMSW = 0.7;
 
 % --- environmental scenario ---
 
@@ -156,9 +158,9 @@ end
 % 50:50 if 1SW returner; 70:30 if 2SW
 % this is used to estimate egg production from returners
 if p.baselineDuration_adultOc > 12
-    propFemale = 0.7;
+    propFemale = p.sexRatioMSW;
 else 
-    propFemale = 0.5;
+    propFemale = p.sexRatio1SW;
 end
 % -------------
 

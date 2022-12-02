@@ -84,6 +84,8 @@ mortalityFramework <- function(p = list(
   # smolt age 1-4 and sea winters 1-3 (figs 2 & 3).
   fecunditySlope = 2.9,
   fecundityIntercept = -1.52,
+  sexRatio1SW = 0.5,
+  sexRatioMSW = 0.7,
   
   # --- environmental scenario ---
   dTwinter = 0, # degrees relative to baseline, whatever baseline is;
@@ -151,9 +153,9 @@ colnames(s) <- stages # for more readable code: s$egg <- 1, s$juvSum1 <- 2, etc
 # 50:50 if 1SW returner; 70:30 if 2SW
 # this is used to estimate egg production from returners
 if (p$baselineDuration_adultOc > 12) {
-propFemale = 0.7
+propFemale = p$sexRatioMSW
 } else {
-  propFemale = 0.5
+  propFemale = p$sexRatio1SW
 }
 # -------------
 
