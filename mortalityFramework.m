@@ -79,9 +79,9 @@ p.L3overW = 62^3 / 2500; % length in cm cubed over weight in g
 
 p.m_egg = 0.1;
 p.m_fry = 0.97;			% based (approximately) on the default in SalmonModeller
-p.parr_ricker_slope = 0.33; % placeholder
-p.parr_ricker_fryatmax = 50000; % placeholder
-	% parr = fry * slope * exp(-fry/fryatmax)
+p.parr_ricker_slope = 0.5; % placeholder
+p.parr_ricker_parrAtMax = 15000; % placeholder
+	% smolt = parr * slope * exp(-parr/parrAtMax)
 p.mort_parr_annual = 0.2; % additional mortality if the parr take 18 mo instead of 6
 p.m_smolt = 0.3; % 0.1 - 0.5
 p.m_earlyPS_monthly = 0.40; % at ref_length_earlyPS; declines rapidly with size
@@ -230,7 +230,7 @@ for i = 1:nStages-2 % nStages-1 -> nStages-2
 		m_i =        1 - (1-daily_mort) ^ (dt_i);
     elseif i == s.parr
         stock = res.N(i);
-        recruits = stock * p.parr_ricker_slope * exp(-stock/p.parr_ricker_fryatmax);
+        recruits = stock * p.parr_ricker_slope * exp(-stock/p.parr_ricker_parrAtMax);
         if dt_i > 365*2
         	recruits = recruits .* (1 - p.mort_parr_annual) ^ 2;
         	% additional penalty for 30 mo parr
