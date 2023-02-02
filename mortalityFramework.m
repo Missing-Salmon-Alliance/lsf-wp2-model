@@ -59,13 +59,13 @@ p.gmaxFry = 0.007; % tuned to give 7 cm at start of parr
 p.gmaxParr6 = 0.0152; % tuned to give a 13 cm smolt for 6 mo parr
 p.gmaxParr18 = 0.0054; % tuned to give a 13.5 cm smolt for 18 mo parr
 p.gmaxParr30 = 0.0034; % tuned to give a 14 cm smolt for 30 mo parr
+	% for comparison, c/100 in the Ratkowsky model used by Forseth et al. 2001
+	% (growth at 1 g body weight and at optimal temp.) for the "mod. fast" category
+	% would give 0.0205. These tuned gmax values should always be less than this,
+	% to reflect the fact that food is actually quite seasonal, not year-round, and
+	% that temperature can't ever be better than optimal
 p.gmaxOc1SW = 0.051; % tuned to turn a 13-13.5 cm smolt into a 60 cm adult after 1SW
 p.gmaxOc2SW = 0.031; % tuned to turn a 13-13.5 cm smolt into a 75 cm adult after 2SW
-	% gmax is c/100 in the Ratkowsky model used by Forseth et al. 2001:
-	% growth at 1 g body weight and at optimal temp. T = TM
-	% the average over "mod. fast" category, 5 rivers, Jonsson et al. 2001, would be 
-	% 2.05/100, but this is reduced in FW to account for the fact that food is actually 
-	% quite seasonal, not year-round. In practice these values are set by tuning
 p.ref_length_parr = 7; % if flexibleParrDuration = 1, then if smaller than this at
 					   % start of parr stage, add 12 mos to parr stage
 					   
@@ -73,13 +73,6 @@ p.ref_length_earlyPS = 14; % just for scaling the equations, not tuning targets
 p.ref_length_adultRiver = 60;
 p.L3overW = 62^3 / 2500; % length in cm cubed over weight in g
 						 % calibrated using Bacon et al. 2009
-
-% temperature dependence: not used
-p.TL_growth = 7.2;   % lower-bound, optimal, and upper-bound temperatures for growth:
-p.TM_growth = 18.3;  % Jonsson et al. 2001
-p.TU_growth = 24.5;
-p.gR_growth = 0.175; % the g parameter in the Ratkowsky model
-					 % average over "mod. fast" category, 5 rivers, Jonsson et al. 2001
 		
 					 
 % --- mortality params ---
@@ -136,7 +129,7 @@ p.dTwinter = 0; % degrees relative to baseline, whatever baseline is;
 p.dgmaxFry = 1; % multiplier on gmaxFW during fry stage (first summer)
 p.dgmaxParr = 1; % multiplier on gmaxFW during parr stage
 	% vary these +/- 15% in combination to get a valid range of smolt sizes
-p.dgmaxOc = 1; % placeholder; haven't evaluated how it behaves
+p.dgmaxOc = 1; % multiplier on marine growth
 
 
 % override defaults based on function inputs
@@ -199,19 +192,10 @@ for i = 1:nStages-2 % nStages-1 -> nStages-2
 
 	% --- growth and weight -------------------------------
 	
-	Teff = p.TM_growth; % assume optimal temperature for growth
 	r_size = res.W(i) .^ -p.exp_growth; % allometry
-	r_temp = (Teff - p.TL_growth) .* ...
-			 (1 - exp(p.gR_growth .* (Teff - p.TU_growth))) ./ ...
-			 (p.TM_growth - p.TL_growth) ./ ...
-			 (1 - exp(p.gR_growth .* (p.TM_growth - p.TU_growth)));
-	r_prey = 1; % haven't included any prey effects
-		% could adjust r_prey for fry based on duration, using the idea that growth is 
-		% concentrated in a 70 day window (Bacon et al. 2005), considering whether 
-		% variation in duration (via dt_egg) falls during that window
 	g = 0;
 	if i == s.fry
-		g = p.dgmaxFry .* p.gmaxFry .* r_size .* r_temp .* r_prey;
+		g = p.dgmaxFry .* p.gmaxFry .* r_size;
 	elseif i == s.parr
 		if dt_i > 365*2
 			gmax = p.gmaxParr30;
@@ -220,9 +204,9 @@ for i = 1:nStages-2 % nStages-1 -> nStages-2
 		else
 			gmax = p.gmaxParr6;
 		end
-		g = p.dgmaxParr .* gmax .* r_size .* r_temp .* r_prey;
+		g = p.dgmaxParr .* gmax .* r_size;
 	elseif i == s.smolt
-		g = p.gmaxParr18 .* r_size .* r_temp .* r_prey; 
+		g = p.dgmaxParr .* p.gmaxParr18 .* r_size; 
 		% matters very little but have to put down something
 	elseif i >= s.earlyPS & i <= s.adultCoastal
 		if p.baselineDuration_adultOc < 12 % 1SW
@@ -230,7 +214,7 @@ for i = 1:nStages-2 % nStages-1 -> nStages-2
 		else
 			gmax = p.gmaxOc2SW;
 		end
-		g = p.dgmaxOc .* gmax .* r_size .* r_temp .* r_prey;
+		g = p.dgmaxOc .* gmax .* r_size;
 	end
 	Wend_i = res.W(i) .* exp(g .* dt_i);
 	
