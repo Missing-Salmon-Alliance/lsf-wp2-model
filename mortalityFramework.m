@@ -1,16 +1,12 @@
 function [res,p,monthly,daily] = mortalityFramework(varargin);
 
 % Salmon Mortality Framework Model
-% v0.7, Aug 2022
+% v0.8, Jan 2023
 % Neil Banas, Emma Tyldesley, Colin Bull
 
-% Edited ET 19/8/22 t:
-% - implement egg production
-% Edited ET 25/10/22 to:
-% - retain adult spawners:
-% - move egg production into new stage
-% - update interpolation onto daily and monthly so that this is only carried
-% out to adult spawner stage
+% replacing fry Ricker curve with a density-independent mortality
+% replacing parr Beverton-Holt with Ricker
+
 
 % --- stage structure ---
 stages = {'egg','fry','parr','smolt','earlyPS','latePS',...
@@ -67,12 +63,11 @@ p.gmaxOc1SW = 0.051; % tuned to turn a 13-13.5 cm smolt into a 60 cm adult after
 p.gmaxOc2SW = 0.031; % tuned to turn a 13-13.5 cm smolt into a 75 cm adult after 2SW
 	% gmax is c/100 in the Ratkowsky model used by Forseth et al. 2001:
 	% growth at 1 g body weight and at optimal temp. T = TM
-	% base value is 2.05/100, which is the average over "mod. fast" category,
-	% 5 rivers, Jonsson et al. 2001
-	% but this needs to be reduced in FW to account for the fact that food is actually 
-	% quite seasonal, not year-round
-p.ref_length_parr = 7; % smaller than this at start of parr stage,
-					   % add 12 mos to parr stage, if flexibleParrDuration = 1
+	% the average over "mod. fast" category, 5 rivers, Jonsson et al. 2001, would be 
+	% 2.05/100, but this is reduced in FW to account for the fact that food is actually 
+	% quite seasonal, not year-round. In practice these values are set by tuning
+p.ref_length_parr = 7; % if flexibleParrDuration = 1, then if smaller than this at
+					   % start of parr stage, add 12 mos to parr stage
 					   
 p.ref_length_earlyPS = 14; % just for scaling the equations, not tuning targets
 p.ref_length_adultRiver = 60;
@@ -90,14 +85,10 @@ p.gR_growth = 0.175; % the g parameter in the Ratkowsky model
 % --- mortality params ---
 
 p.m_egg = 0.1;
-p.maxParr = 50000;      % fry-stage carrying capacity
-p.fryRicker = 0.08;     % hatching to parr Ricker stock-recruit parameter
-p.maxSmolts = 27000;    % parr-stage carrying capacity
-p.parrSmoltBH = 0.5;    % parr to smolt Beverton Holt stock-recruit parameter
-    % the Ricker and BH parameters above all directly from Salmonmodeller
-    % no references given
-    % values for R. Bush data were maxParr 650000, fryRicker 0.259
-    % BH curve based on 6 mo parr
+p.m_fry = 0.97;			% based (approximately) on the default in SalmonModeller
+p.parr_ricker_slope = 0.33; % placeholder
+p.parr_ricker_fryatmax = 50000; % placeholder
+	% parr = fry * slope * exp(-fry/fryatmax)
 p.mort_parr_annual = 0.2; % additional mortality if the parr take 18 mo instead of 6
 p.m_smolt = 0.3; % 0.1 - 0.5
 p.m_earlyPS_monthly = 0.40; % at ref_length_earlyPS; declines rapidly with size
@@ -117,8 +108,9 @@ p.m_adultRiver = 0.09;
 % wth same base-case marine survival but with really extreme variation as smolt length
 % changes.
 
-% -- ET edit -- 
-% Fecundity parameters.
+
+% --- fecundity params ---
+
 % Fecundity estimated as function of fork length (L_f) in cm:
 % log10(eggs)=m.log10(L_f)+c
 % Parameters from Hanson et al. (2019) by digitising results for fish with
@@ -127,6 +119,15 @@ p.fecunditySlope = 2.9;
 p.fecundityIntercept = -1.52;
 p.sexRatio1SW = 0.5; % proportion female
 p.sexRatioMSW = 0.7;
+
+% proportion of spawners female is 50:50 if 1SW returner; 70:30 if 2SW
+% this is used to estimate egg production from returners
+if p.baselineDuration_adultOc > 12
+    propFemale = p.sexRatioMSW;
+else 
+    propFemale = p.sexRatio1SW;
+end
+
 
 % --- environmental scenario ---
 
@@ -152,17 +153,6 @@ else
 		end
 	end
 end
-
-% -- ET edit --
-% set proportion of spawners female
-% 50:50 if 1SW returner; 70:30 if 2SW
-% this is used to estimate egg production from returners
-if p.baselineDuration_adultOc > 12
-    propFemale = p.sexRatioMSW;
-else 
-    propFemale = p.sexRatio1SW;
-end
-% -------------
 
 nStages = length(stages);
 blank = repmat(nan,[nStages 1]);
@@ -252,17 +242,11 @@ for i = 1:nStages-2 % nStages-1 -> nStages-2
 		daily_mort = 1 - (1-p.m_egg)    ^ (1/dt_i_baseline);
 		m_i =        1 - (1-daily_mort) ^ (dt_i);
     elseif i == s.fry
-        % apply Ricker density-dependent mortality (scramble competition)
-        stock = res.N(i);
-        recruits = p.fryRicker * stock * exp((-p.fryRicker/(exp(1)*p.maxParr)) * stock);
-        m_i = 1 - (recruits/stock); % total mortality over stage duration
-		% at the moment this is _not_ adjusted for stage duration, even though
-		% fry duration changes in response to egg duration
+		daily_mort = 1 - (1-p.m_fry)    ^ (1/dt_i_baseline);
+		m_i =        1 - (1-daily_mort) ^ (dt_i);
     elseif i == s.parr
-        % apply Beverton-Holt density-dependent mortality
         stock = res.N(i);
-        recruits = (p.parrSmoltBH * stock) / (1 + (p.parrSmoltBH/p.maxSmolts) * stock);
-            % numbers surviving over stage
+        recruits = stock * p.parr_ricker_slope * exp(-stock/p.parr_ricker_fryatmax);
         if dt_i > 365*2
         	recruits = recruits .* (1 - p.mort_parr_annual) ^ 2;
         	% additional penalty for 30 mo parr
