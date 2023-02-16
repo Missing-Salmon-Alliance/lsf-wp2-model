@@ -78,28 +78,28 @@ p.L3overW = 62^3 / 2500; % length in cm cubed over weight in g
 % --- mortality params ---
 
 p.m_egg = 0.1;
-p.m_fry = 0.97;			% based (approximately) on the default in SalmonModeller
-p.parr_ricker_slope = 0.5; % placeholder
-p.parr_ricker_parrAtMax = 15000; % placeholder
-	% smolt = parr * slope * exp(-parr/parrAtMax)
+p.m_fry = 0.95;
+p.m_smolt = 0.2;
+%p.parr_ricker_alpha = 0.026 / (1-p.m_egg) / (1-p.m_fry) / (1-p.m_smolt);
+p.parr_ricker_alpha = 0.7222;
+%p.parr_ricker_beta = 4.16e-07 / (1-p.m_egg) / (1-p.m_fry);
+p.parr_ricker_beta = 9.244e-6;
+	% smolt = alpha * parr * exp(-beta * parr)
+	% these multipliers are there to make the egg-smolt Ricker relationship
+	% come out to a fit to Bush data, Feb 2023:
+	% egg-smolt alpha = 0.26 (0.015, 0.037)
+	% egg-smolt beta = 4.16e-07 (2.25e-07, 6.06e-07)
+	%
+	% note that there is a danger of alpha coming out greater than 1, which doesn't
+	% make biological sense. Compare (1-p.m_egg) * (1-p.m_fry) * (1-p.m_smolt) with
+	% 0.026 to keep this from happening
 p.mort_parr_annual = 0.2; % additional mortality if the parr take 18 mo instead of 6
-p.m_smolt = 0.3; % 0.1 - 0.5
-p.m_earlyPS_monthly = 0.40; % at ref_length_earlyPS; declines rapidly with size
-p.exp_sizeMort = -0.37; % dependence of daily mortality on weight
-p.rmort2SW = 1.07; % additional marine mortality (multiplier) for 2SW vs 1SW
+p.m_earlyPS_monthly = 0.37; % at ref_length_earlyPS; declines with size
+p.exp_sizeMort = -0.35; % dependence of daily mortality on weight
+p.rmort2SW = 1.1; % additional marine mortality (multiplier) for 2SW vs 1SW
 p.m_adultOc_monthly = 0.03;
 p.m_adultCoastal = 0.1;
 p.m_adultRiver = 0.09;
-
-% marine mortality parameters tuned based on 1SW, 2SW survival for the Bush,
-% and so that a 25% change in smolt length (12-16 cm) has roughly a 2x effect
-% on marine survival. Alternately, if we keep the exp_sizeMort consistent with
-% Ricker 1976 -> Mangel 1994 -> IBASAM, and retune, we would have
-% p.exp_sizeMort = -1.57;
-% p.m_earlyPS_monthly = 0.55;
-% p.rmort2SW = 1.04;
-% wth same base-case marine survival but with really extreme variation as smolt length
-% changes.
 
 
 % --- fecundity params ---
@@ -226,11 +226,10 @@ for i = 1:nStages-2 % nStages-1 -> nStages-2
 		daily_mort = 1 - (1-p.m_egg)    ^ (1/dt_i_baseline);
 		m_i =        1 - (1-daily_mort) ^ (dt_i);
     elseif i == s.fry
-		daily_mort = 1 - (1-p.m_fry)    ^ (1/dt_i_baseline);
-		m_i =        1 - (1-daily_mort) ^ (dt_i);
+		m_i = p.m_fry;
     elseif i == s.parr
         stock = res.N(i);
-        recruits = stock * p.parr_ricker_slope * exp(-stock/p.parr_ricker_parrAtMax);
+        recruits = stock * p.parr_ricker_alpha * exp(-p.parr_ricker_beta * stock);
         if dt_i > 365*2
         	recruits = recruits .* (1 - p.mort_parr_annual) ^ 2;
         	% additional penalty for 30 mo parr

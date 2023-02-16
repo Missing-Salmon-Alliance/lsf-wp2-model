@@ -1,4 +1,4 @@
-function res = mortalityFramework_iterate(Ngen,varargin);
+function [res,p] = mortalityFramework_iterate(Ngen,varargin);
 
 % res = mortalityFramework_iterate(Ngen,...);
 %
