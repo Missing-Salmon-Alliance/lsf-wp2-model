@@ -1,10 +1,14 @@
+# Salmon Mortality Framework Model
+# Neil Banas, Emma Tyldesley, Graeme Diack, Colin Bull
+# v0.8, March 2023:   replacing fry Ricker curve with a density-independent mortality
+#                     replacing parr Beverton-Holt with Ricker
+
 mortalityFramework <- function(p = list(
   N_initial = 1e6, # initial number of eggs
   
   # --- life history schedule ---
   
   yearday_eggDeposition = -60, # Matlab: datenum('1 Nov 0000') - 366
-  # Note: could use ISOdatetime?
   baselineDuration_egg = 5, # in months
   yearday_endOfFry = 274, # Matlab: datenum('30 Sep 0000')
   baselineDuration_parr = 18,
@@ -25,58 +29,44 @@ mortalityFramework <- function(p = list(
   gmaxParr6 = 0.0152, # tuned to give a 13 cm smolt for 6 mo parr
   gmaxParr18 = 0.0054, # tuned to give a 13.5 cm smolt for 18 mo parr
   gmaxParr30 = 0.0034, # tuned to give a 14 cm smolt for 30 mo parr
+  # for comparison, c/100 in the Ratkowsky model used by Forseth et al. 2001
+  # (growth at 1 g body weight and at optimal temp.) for the "mod. fast" category
+  # would give 0.0205. These tuned gmax values should always be less than this,
+  # to reflect the fact that food is actually quite seasonal, not year-round, and
+  # that temperature can't ever be better than optimal
   gmaxOc1SW = 0.051, # tuned to turn a 13-13.5 cm smolt into a 60 cm adult after 1SW
   gmaxOc2SW = 0.031, # tuned to turn a 13-13.5 cm smolt into a 75 cm adult after 2SW
-  # gmax is c/100 in the Ratkowsky model used by Forseth et al. 2001:
-  # growth at 1 g body weight and at optimal temp. T = TM
-  # base value is 2.05/100, which is the average over "mod. fast" category,
-  # 5 rivers, Jonsson et al. 2001
-  # but this needs to be reduced in FW to account for the fact that food is actually 
-  # quite seasonal, not year-round
-  
   ref_length_parr = 7,   # smaller than this at start of parr stage, add 12 mos to parr stage, if flexibleParrDuration = 1
-  
   ref_length_earlyPS = 14, # just for scaling the equations, not tuning targets
   ref_length_adultRiver = 60,
   L3overW = 62^3 / 2500, # length in cm cubed over weight in g
   # calibrated using Bacon et al. 2009
   
-  # temperature dependence: not used
-  TL_growth = 7.2,   # lower-bound, optimal, and upper-bound temperatures for growth:
-  TM_growth = 18.3,  # Jonsson et al. 2001
-  TU_growth = 24.5,
-  gR_growth = 0.175,
-  
   # --- mortality params ---
   m_egg = 0.1,
-  maxParr = 50000,     # juv first summer carrying capacity
-  fryRicker = 0.08,     # hatching to parr Ricker stock-recruit parameter
-  maxSmolts = 27000,    # juv later carrying capacity
-  parrSmoltBH = 0.5,    # parr to smolt Beverton Holt stock-recruit parameter
-  # the Ricker and BH parameters above all directly from Salmonmodeller
-  # no references given
-  # values for R. Bush data were maxParr 650000, fryRicker 0.259
-  # BH curve based on 6 mo parr
+  m_fry = 0.95,
+  m_smolt = 0.2, # 0.1 - 0.5
+  # parr_ricker_alpha = 0.026 / (1-m_egg) / (1-m_fry) / (1-m_smolt)
+  parr_ricker_alphafry = 0.7222,
+  # p.parr_ricker_beta = 4.16e-07 / (1-m_egg) / (1-m_fry)
+  parr_ricker_beta = 9.244e-6,
+    # smolt = alpha * parr * exp(-beta * parr)
+    # these multipliers are there to make the egg-smolt Ricker relationship
+    # come out to a fit to Bush data, Feb 2023:
+    # egg-smolt alpha = 0.26 (0.015, 0.037)
+    # egg-smolt beta = 4.16e-07 (2.25e-07, 6.06e-07)
+    #
+    # note that there is a danger of alpha coming out greater than 1, which doesn't
+	  # make biological sense. Compare (1-p.m_egg) * (1-p.m_fry) * (1-p.m_smolt) with
+	  # 0.026 to keep this from happening
   mort_parr_annual = 0.2, # additional mortality if the parr take 18 mo instead of 6
-  m_smolt = 0.3, # 0.1 - 0.5
-  
-  m_earlyPS_monthly = 0.40, # at ref_length_earlyPS; declines rapidly with size
-  exp_sizeMort = -0.37, # dependence of daily mortality on weight
-  rmort2SW = 1.07, # additional marine mortality (multiplier) for 2SW vs 1SW
+  m_earlyPS_monthly = 0.37, # at ref_length_earlyPS; declines rapidly with size
+  exp_sizeMort = -0.35, # dependence of daily mortality on weight
+  rmort2SW = 1.1, # additional marine mortality (multiplier) for 2SW vs 1SW
   m_adultOc_monthly = 0.03,
   m_adultCoastal = 0.1,
   m_adultRiver = 0.09,
-  
-  # marine mortality parameters tuned based on 1SW, 2SW survival for the Bush,
-  # and so that a 25# change in smolt length (12-16 cm) has roughly a 2x effect
-  # on marine survival. Alternately, if we keep the exp_sizeMort consistent with
-  # Ricker 1976 -> Mangel 1994 -> IBASAM, and retune, we would have
-  # exp_sizeMort = -1.57
-  # m_earlyPS_monthly = 0.55
-  # rmort2SW = 1.04
-  # wth same base-case marine survival but with really extreme variation as smolt length changes.
-  
-  # -- ET edit -- 
+ 
   # --- fecundity parameters ---
   # Fecundity estimated as function of fork length (L_f) in cm:
   # log10(eggs)=m.log10(L_f)+c
@@ -93,31 +83,9 @@ mortalityFramework <- function(p = list(
   dgmaxFry = 1, # multiplier on gmaxFW during fry stage (first summer)
   dgmaxParr = 1, # multiplier on gmaxFW during parr stage
   # vary these +/- 15# in combination to get a valid range of smolt sizes
-  dgmaxOc = 1), # placeholder; haven't evaluated how it behaves
+  dgmaxOc = 1), # multiplier on marine growth
   ...) { 
   
-# Salmon Mortality Framework Model
-# v0.7.1, Aug 2022
-# Neil Banas, Emma Tyldesley, Colin Bull
-#   v0.7.1: GD - Edit parameter p definition, moved from in function to passed parameter
-#           GD - Added timestamp to output
-  
-
-# Edited ET 19/8/22 to:
-# - implement egg production
-# Edited ET 25/10/22 to:
-# - retain adult spawners:
-# - move egg production into new stage
-# - update interpolation onto daily and monthly so that this is only # carried out to adult spawner stage
-  
-# --- Transcribed from Matlab version: ---
-#   Matlab ceil --> R ceiling
-#   Matlab interp1 --> R approx (which returns list of xq,yq so have to select yq before taking exp)
-#   datetimes just defined as numbers s.t. 1 Jan of hatching yr = day 1
-#     and egg deposition on 1 Nov is day -60
-#   p struct --> list (allows variables of different length)
-#   res, daily and monthly struct --> data.frame
-
 # --- stage structure ---
 stages <- c("egg","fry","parr","smolt","earlyPS",
             "latePS","adultOc","adultCoastal",
@@ -129,26 +97,6 @@ nStages <- length(stages)
 s <- data.frame( matrix(1:nStages,nrow=1))
 colnames(s) <- stages # for more readable code: s$egg <- 1, s$juvSum1 <- 2, etc
 
-# GD note: I transformed the built in defaults p into a single parameter that is modified via calls to the model function within R
-# This replaces the initialisation of p a few lines below plus I think the two commented out sections under ET notes.
-
-
-# ET note: haven't implemented the section below. Do you need this, Graeme?
-# # you can get these variables by calling
-# # [stages,stages_longnames,s] = mortalityFramework('stages')
-# if nargin>0 && strcmpi(varargin{1},'stages')
-# res <- stages
-# p <- stages_longnames
-# monthly <- s
-# return
-# end
-
-# --- model parameters ---
-# p <- list() # initialise empty list
-
-
-
-# -- ET edit --
 # set proportion of spawners female
 # 50:50 if 1SW returner; 70:30 if 2SW
 # this is used to estimate egg production from returners
@@ -157,24 +105,8 @@ propFemale = p$sexRatioMSW
 } else {
   propFemale = p$sexRatio1SW
 }
+
 # -------------
-
-
-# ET note: haven't implemented this part. Think you may already have extra code for this, Graeme?
-# override defaults based on function inputs
-# if nargin==1 && isstruct(varargin{1})
-# # input = parameter structure
-# p = varargin{1};
-# else
-#   # input = name-value pairs
-# for k=1:2:nargin
-# if isfield(p,varargin{k})
-# p.(varargin{k}) = varargin{k+1};
-# else
-#   disp(['don''t recognise ''' varargin{k} '''; ignoring'])
-# end
-# end
-# end
 
 # check p initialised
 #str(p)
@@ -182,8 +114,6 @@ propFemale = p$sexRatioMSW
 blank <- rep(NA,nStages)
 
 # --- key state variables, defined at start of stage ---
-# res is structure to hold results
-# res better as data.frame not list because each variable same length
 res <- data.frame("N" = blank, # number of individuals
           "W" = blank,   # individual weight
           "t0" = blank,  # time (days)
@@ -207,7 +137,6 @@ for (i in 1:(nStages-2) ) {
   
   # --- stage duration ---
   
-  dt_i_baseline <- p$baselineDuration_months[i] * (365/12)
   if (i==s$egg) {
     # temperature-dependent egg duration
     dt_i_baseline <- p$baselineDuration_egg * (365/12)
@@ -229,19 +158,10 @@ for (i in 1:(nStages-2) ) {
   
   # --- growth and weight ---
   
-  Teff <- p$TM_growth # assume optimal temperature for growth.
   r_size <- res$W[i] ^ -p$exp_growth # allometry
-  r_temp <- (Teff - p$TL_growth) * 
-    (1 - exp(p$gR_growth * (Teff - p$TU_growth))) /
-    (p$TM_growth - p$TL_growth) / 
-    (1 - exp(p$gR_growth * (p$TM_growth - p$TU_growth)))
-  r_prey <- 1 # haven't included any prey effects
-  # could adjust r_prey for fry based on duration, using the idea that growth is 
-  # concentrated in a 70 day window (Bacon et al. 2005), considering whether 
-  # variation in duration (via dt_egg) falls during that window
 	g <- 0
 	if (i == s$fry) {
-	  g <- p$dgmaxFry * p$gmaxFry * r_size * r_temp * r_prey
+	  g <- p$dgmaxFry * p$gmaxFry * r_size
 	} else if (i == s$parr) {
 	  if (dt_i > 365*2) {
 	    gmax <- p$gmaxParr30
@@ -250,7 +170,7 @@ for (i in 1:(nStages-2) ) {
 	  } else {
 	    gmax <- p$gmaxParr6
 	  }
-	  g <- p$dgmaxParr * gmax * r_size * r_temp * r_prey
+	  g <- p$dgmaxParr * gmax * r_size
 	} else if (i == s$smolt) {
 	  g <- p$gmaxParr18 * r_size * r_temp * r_prey
 	  # matters very little but have to put down something
@@ -260,9 +180,8 @@ for (i in 1:(nStages-2) ) {
 	    } else {
 	      gmax <- p$gmaxOc2SW
 	    }
-	  g <- p$dgmaxOc * gmax * r_size * r_temp * r_prey
+	  g <- p$dgmaxOc * gmax * r_size
   }
-
 	Wend_i <- res$W[i] * exp(g * dt_i)
 	
 	# --- mortality ---
@@ -271,17 +190,10 @@ for (i in 1:(nStages-2) ) {
 	  daily_mort <- 1 - (1-p$m_egg) ^ (1/dt_i_baseline)
 	  m_i <- 1 - (1-daily_mort) ^ (dt_i)
 	} else if (i == s$fry) {
-	  # apply Ricker density-dependent mortality (scramble competition)
-	  stock <- res$N[i]
-	  recruits <- p$fryRicker * stock * exp((-p$fryRicker/(exp(1)*p$maxParr)) * stock)
-	  m_i <- 1 - (recruits/stock) # total mortality over stage duration
-	  # at the moment this is _not_ adjusted for stage duration, even though
-	  # fry duration changes in response to egg duration
+	  m_i <- p$m_fry
 	} else if (i == s$parr) {
-	  # apply Beverton-Holt density-dependent mortality
 	  stock <- res$N[i]
-	  recruits <- (p$parrSmoltBH * stock) / (1 + (p$parrSmoltBH/p$maxSmolts) * stock)
-	  #  numbers surviving over stage
+	  recruits <- stock * p$parr_ricker_alpha * exp(-p$parr_ricker_beta * stock)
 	  if (dt_i > 365*2) {
 	    recruits <- recruits * (1 - p$mort_parr_annual) ^ 2
 	    # additional penalty for 30 mo parr
@@ -293,22 +205,22 @@ for (i in 1:(nStages-2) ) {
 	} else if (i == s$smolt) {
 	    m_i <- p$m_smolt
 	} else if (i == s$earlyPS || i == s$latePS) { # size-dependence during post-smolt only
-	    refW = p$ref_length_earlyPS^3 / p$L3overW
-	    r_size = (res$W[i]/refW) ^ p$exp_sizeMort
+	    refW <- p$ref_length_earlyPS^3 / p$L3overW
+	    r_size <- (res$W[i]/refW) ^ p$exp_sizeMort
 	    if (p$baselineDuration_adultOc > 12) { # additional mortality for 2SW
-	      rlh = p$rmort2SW
+	      rlh <- p$rmort2SW
 	    } else {
-	      rlh = 1
+	      rlh <- 1
 	    }
 	    m_i <- 1 - max(0, 1 - p$m_earlyPS_monthly * r_size * rlh) ^ (dt_i/365*12)
 	    if (p$baselineDuration_adultOc > 12) { # additional mortality for 2SW
-	      m_i = m_i * p$rmort2SW
+	      m_i <- m_i * p$rmort2SW
 	    }
 	} else if (i == s$adultOc) {
 	      if (p$baselineDuration_adultOc > 12) { # additional mortality for 2SW
-	        rlh = p$rmort2SW
+	        rlh <- p$rmort2SW
 	      } else {
-	        rlh = 1
+	        rlh <- 1
 	      }
 	    m_i <- 1 - max(0, 1 - p$m_adultOc_monthly * rlh) ^ (dt_i/365*12)
 	} else if (i == s$adultCoastal) {
@@ -330,14 +242,9 @@ for (i in 1:(nStages-2) ) {
  
 } 
 
-# -- ET edit --
-
 # --- Calculate egg production ---
-# 'nextGen' was previously used to store survivors of adultRiver stage,
-# i.e. spawners.
-# Do we want a new stage to store adultRiver survivors, e.g.
-# "adultSpawners"?
-# Or better to store egg production in nextGen, as done here?
+# - 'nextGen' renamed to 'adultSpawners' to store survivors of adultRiver.
+# - egg production stored in new stage 'eggProduction'.
 spawners <- res$N[s$adultSpawners] * propFemale   # number of female spawners
 spawner_L_f <- res$L[s$adultSpawners]             # mean spawner size (cm)
 fecundity <- 10^( p$fecunditySlope*log10(spawner_L_f) + p$fecundityIntercept )
