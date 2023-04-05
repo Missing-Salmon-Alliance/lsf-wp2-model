@@ -172,7 +172,7 @@ for (i in 1:(nStages-2) ) {
 	  }
 	  g <- p$dgmaxParr * gmax * r_size
 	} else if (i == s$smolt) {
-	  g <- p$gmaxParr18 * r_size# * r_temp * r_prey
+	  g <- p$gmaxParr18 * r_size
 	  # matters very little but have to put down something
 	} else if (i >= s$earlyPS & i <= s$adultCoastal) {
 	    if (p$baselineDuration_adultOc < 12) { # 1SW
