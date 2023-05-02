@@ -1,7 +1,7 @@
 function [res,p,monthly,daily] = mortalityFramework(varargin);
 
 % Salmon Mortality Framework Model
-% v0.8, Jan 2023
+% v0.8.1, Jan 2023
 % Neil Banas, Emma Tyldesley, Colin Bull
 
 % replacing fry Ricker curve with a density-independent mortality
@@ -30,7 +30,7 @@ end
 
 % --- model parameters ------------------------------------------------------------------
 clear p
-p.N_initial = 1e6;
+p.N_initial = 2.4e6;
 
 % --- life history schedule ---
 
@@ -54,18 +54,26 @@ p.W_egg = 1; % 1 gram
 p.Q10_dtegg = 6.5;   % Elliott and Hurley 1998, reciprocal of eq 1a:
 				     % 2.12x change over 4 degC
 p.exp_growth = 0.31; % Forseth et al. 2001
-p.gmaxFry = 0.007; % tuned to give 7 cm at start of parr
-				   % vary this about +/- 30% to give 6-8 cm parr
-p.gmaxParr6 = 0.0152; % tuned to give a 13 cm smolt for 6 mo parr
-p.gmaxParr18 = 0.0054; % tuned to give a 13.5 cm smolt for 18 mo parr
-p.gmaxParr30 = 0.0034; % tuned to give a 14 cm smolt for 30 mo parr
+	% growth rates below are based on round numbers from previous versions, with a 
+	% factor of 1.18 in freshwater and 0.98 in the ocean applied based on smolt and adult
+	% length, R Bush 1980s
+p.gmaxFry = 0.0084; 
+	% 0.007 gives 7 cm at start of parr; can vary this +/- 30% to give 6-8 cm parr
+p.gmaxParr6 = 0.0181;
+	% 0.0152 gives a 13 cm smolt for 6 mo parr
+p.gmaxParr18 = 0.0065; 
+	% 0.0054 gives a 13.5 cm smolt for 18 mo parr
+p.gmaxParr30 = 0.0040;
+	% 0.0034 gives a 14 cm smolt for 30 mo parr
 	% for comparison, c/100 in the Ratkowsky model used by Forseth et al. 2001
 	% (growth at 1 g body weight and at optimal temp.) for the "mod. fast" category
 	% would give 0.0205. These tuned gmax values should always be less than this,
 	% to reflect the fact that food is actually quite seasonal, not year-round, and
 	% that temperature can't ever be better than optimal
-p.gmaxOc1SW = 0.051; % tuned to turn a 13-13.5 cm smolt into a 60 cm adult after 1SW
-p.gmaxOc2SW = 0.031; % tuned to turn a 13-13.5 cm smolt into a 75 cm adult after 2SW
+p.gmaxOc1SW = 0.050;
+	% 0.051 turns a 13-13.5 cm smolt into a 60 cm adult after 1SW
+p.gmaxOc2SW = 0.030;
+	% 0.031 turns a 13-13.5 cm smolt into a 75 cm adult after 2SW
 p.ref_length_parr = 7; % if flexibleParrDuration = 1, then if smaller than this at
 					   % start of parr stage, add 12 mos to parr stage
 					   
@@ -80,15 +88,16 @@ p.L3overW = 62^3 / 2500; % length in cm cubed over weight in g
 p.m_egg = 0.1;
 p.m_fry = 0.95;
 p.m_smolt = 0.2;
-%p.parr_ricker_alpha = 0.026 / (1-p.m_egg) / (1-p.m_fry) / (1-p.m_smolt);
-p.parr_ricker_alpha = 0.7222;
-%p.parr_ricker_beta = 4.16e-07 / (1-p.m_egg) / (1-p.m_fry);
+p.parr_ricker_alpha = 0.9028;
 p.parr_ricker_beta = 9.244e-6;
 	% smolt = alpha * parr * exp(-beta * parr)
 	% these multipliers are there to make the egg-smolt Ricker relationship
 	% come out to a fit to Bush data, Feb 2023:
-	% egg-smolt alpha = 0.26 (0.015, 0.037)
+	% egg-smolt alpha = 0.026 (0.015, 0.037)
 	% egg-smolt beta = 4.16e-07 (2.25e-07, 6.06e-07)
+	% p.parr_ricker_alpha = 0.026 / (1-p.m_egg) / (1-p.m_fry) / (1-p.m_smolt)
+	%    / (1 - p.mort_parr_annual) , if the egg-smolt data mainly reflects 18 mo parr 
+	% p.parr_ricker_beta = 4.16e-07 / (1-p.m_egg) / (1-p.m_fry);
 	%
 	% note that there is a danger of alpha coming out greater than 1, which doesn't
 	% make biological sense. Compare (1-p.m_egg) * (1-p.m_fry) * (1-p.m_smolt) with
@@ -96,10 +105,12 @@ p.parr_ricker_beta = 9.244e-6;
 p.mort_parr_annual = 0.2; % additional mortality if the parr take 18 mo instead of 6
 p.m_earlyPS_monthly = 0.37; % at ref_length_earlyPS; declines with size
 p.exp_sizeMort = -0.35; % dependence of daily mortality on weight
-p.rmort2SW = 1.1; % additional marine mortality (multiplier) for 2SW vs 1SW
+p.rmort2SW = 1.09; % additional marine mortality (multiplier) for 2SW vs 1SW.
+	% chosen to produce a small but nonzero equilibrium population,
+	% with marine survival around 1.7%
 p.m_adultOc_monthly = 0.03;
 p.m_adultCoastal = 0.1;
-p.m_adultRiver = 0.09;
+p.m_adultRiver = 0.09; % R Bush 1980s has 0.4
 
 
 % --- fecundity params ---
@@ -128,7 +139,6 @@ p.dTwinter = 0; % degrees relative to baseline, whatever baseline is;
 				% applied to egg duration
 p.dgmaxFry = 1; % multiplier on gmaxFW during fry stage (first summer)
 p.dgmaxParr = 1; % multiplier on gmaxFW during parr stage
-	% vary these +/- 15% in combination to get a valid range of smolt sizes
 p.dgmaxOc = 1; % multiplier on marine growth
 
 
