@@ -50,7 +50,7 @@ mortalityFramework <- function(p = list(
   m_egg = 0.1,
   m_fry = 0.95,
   m_smolt = 0.2, # 0.1 - 0.5
-  parr_ricker_alphafry = 0.9028,
+  parr_ricker_alpha = 0.9028,
   parr_ricker_beta = 9.244e-6,
     # smolt = alpha * parr * exp(-beta * parr)
     # these multipliers are there to make the egg-smolt Ricker relationship
