@@ -1,7 +1,7 @@
 function [res,p,monthly,daily] = mortalityFramework(varargin);
 
 % Salmon Mortality Framework Model
-% v0.8.1, Jan 2023
+% v0.8.2, May 2023
 % Neil Banas, Emma Tyldesley, Colin Bull
 
 % replacing fry Ricker curve with a density-independent mortality
@@ -105,9 +105,9 @@ p.parr_ricker_beta = 9.244e-6;
 p.mort_parr_annual = 0.2; % additional mortality if the parr take 18 mo instead of 6
 p.m_earlyPS_monthly = 0.37; % at ref_length_earlyPS; declines with size
 p.exp_sizeMort = -0.35; % dependence of daily mortality on weight
-p.rmort2SW = 1.09; % additional marine mortality (multiplier) for 2SW vs 1SW.
+p.rmort2SW = 1.13; % additional marine mortality (multiplier) for 2SW vs 1SW.
 	% chosen to produce a small but nonzero equilibrium population,
-	% with marine survival around 1.7%
+	% with marine survival around 1%
 p.m_adultOc_monthly = 0.03;
 p.m_adultCoastal = 0.1;
 p.m_adultRiver = 0.09; % R Bush 1980s has 0.4
@@ -123,14 +123,6 @@ p.fecunditySlope = 2.9;
 p.fecundityIntercept = -1.52;
 p.sexRatio1SW = 0.5; % proportion female
 p.sexRatioMSW = 0.7;
-
-% proportion of spawners female is 50:50 if 1SW returner; 70:30 if 2SW
-% this is used to estimate egg production from returners
-if p.baselineDuration_adultOc > 12
-    propFemale = p.sexRatioMSW;
-else 
-    propFemale = p.sexRatio1SW;
-end
 
 
 % --- environmental scenario ---
@@ -286,12 +278,14 @@ for i = 1:nStages-2 % nStages-1 -> nStages-2
     
 end
 
-% -- ET edit --
-%
-% --- Calculate egg production ---
-% - 'nextGen' renamed to 'adultSpawners' to store survivors of adultRiver.
-% - egg production stored in new stage 'eggProduction'.
+% --- egg production ---
 
+% proportion of spawners female is 50:50 if 1SW returner; 70:30 if 2SW
+if p.baselineDuration_adultOc > 12
+    propFemale = p.sexRatioMSW;
+else 
+    propFemale = p.sexRatio1SW;
+end
 spawners = res.N(s.adultSpawners) * propFemale;   % number of female spawners
 spawner_L_f = res.L(s.adultSpawners);             % mean spawner size (cm)
 fecundity = 10^( p.fecunditySlope*log10(spawner_L_f) + p.fecundityIntercept );
