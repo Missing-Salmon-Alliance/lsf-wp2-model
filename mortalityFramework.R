@@ -3,7 +3,8 @@
 #' v0.8, March 2023:   replacing fry Ricker curve with a density-independent mortality
 #'                     replacing parr Beverton-Holt with Ricker
 #' v0.8.1, May 2023:   update to default parameters to improve model response to 2SW population NB
-
+#' v0.8.2, May 2023:   moved the lines that apply sex ration as a function of SW -- they weren't being applied in iterative experiments. default rmort2SW increased accordingly NB
+#' 
 mortalityFramework <- function(p = list(
   N_initial = 2.4e6, # initial number of eggs
   
@@ -67,9 +68,9 @@ mortalityFramework <- function(p = list(
   mort_parr_annual = 0.2, # additional mortality if the parr take 18 mo instead of 6
   m_earlyPS_monthly = 0.37, # at ref_length_earlyPS; declines rapidly with size
   exp_sizeMort = -0.35, # dependence of daily mortality on weight
-  rmort2SW = 1.09, # additional marine mortality (multiplier) for 2SW vs 1SW
+  rmort2SW = 1.13, # additional marine mortality (multiplier) for 2SW vs 1SW
     # chosen to produce a small but nonzero equilibrium population,
-    # with marine survival around 1.7%
+    # with marine survival around 1%
   m_adultOc_monthly = 0.03,
   m_adultCoastal = 0.1,
   m_adultRiver = 0.09, # R Bush 1980s has 0.4
@@ -102,15 +103,6 @@ stages_longnames <- c("egg","fry","parr","smolt","early post-smolt",
 nStages <- length(stages)
 s <- data.frame( matrix(1:nStages,nrow=1))
 colnames(s) <- stages # for more readable code: s$egg <- 1, s$juvSum1 <- 2, etc
-
-# set proportion of spawners female
-# 50:50 if 1SW returner; 70:30 if 2SW
-# this is used to estimate egg production from returners
-if (p$baselineDuration_adultOc > 12) {
-propFemale = p$sexRatioMSW
-} else {
-  propFemale = p$sexRatio1SW
-}
 
 # -------------
 
@@ -251,6 +243,15 @@ for (i in 1:(nStages-2) ) {
 # --- Calculate egg production ---
 # - 'nextGen' renamed to 'adultSpawners' to store survivors of adultRiver.
 # - egg production stored in new stage 'eggProduction'.
+# --- egg production ---
+# set proportion of spawners female
+# 50:50 if 1SW returner; 70:30 if 2SW
+# this is used to estimate egg production from returners
+if (p$baselineDuration_adultOc > 12) {
+  propFemale = p$sexRatioMSW
+} else {
+  propFemale = p$sexRatio1SW
+}
 spawners <- res$N[s$adultSpawners] * propFemale   # number of female spawners
 spawner_L_f <- res$L[s$adultSpawners]             # mean spawner size (cm)
 fecundity <- 10^( p$fecunditySlope*log10(spawner_L_f) + p$fecundityIntercept )
