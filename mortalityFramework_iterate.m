@@ -7,7 +7,7 @@ function [res,p] = mortalityFramework_iterate(Ngen,varargin);
 %    or as vectors of length Ngen.
 %
 %    for example
-%       gen = mortalityFramework_iterate(5,2,1,'dgmaxfry',1.1);
+%       [res,p] = mortalityFramework_iterate(7,2,1,'dgmaxfry',1.1);
 %       runs 7 generations of 2yo smolts, 1SW, rapid fry growth
 %
 
