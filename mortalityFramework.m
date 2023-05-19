@@ -85,8 +85,8 @@ p.L3overW = 62^3 / 2500; % length in cm cubed over weight in g
 					 
 % --- mortality params ---
 
-p.m_egg = 0.1;
-p.m_fry = 0.95;
+p.m_egg = 0.2;
+p.m_fry = 0.944;
 p.m_smolt = 0.2;
 p.parr_ricker_alpha = 0.9028;
 p.parr_ricker_beta = 9.244e-6;
