@@ -43,8 +43,8 @@ mortalityFramework <- function(p = list(
   # calibrated using Bacon et al. 2009
   
   # --- mortality params ---
-  m_egg = 0.1,
-  m_fry = 0.95,
+  m_egg = 0.2,
+  m_fry = 0.944,
   m_smolt = 0.2, # 0.1 - 0.5
   # parr_ricker_alpha = 0.026 / (1-m_egg) / (1-m_fry) / (1-m_smolt)
   parr_ricker_alphafry = 0.7222,
